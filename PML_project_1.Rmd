@@ -1,0 +1,111 @@
+---
+title: "Human Activity Recognition"
+output: html_document
+---
+
+##Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, the goal is to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the [website](http://groupware.les.inf.puc-rio.br/har) (see the section on the Weight Lifting Exercise Dataset). 
+
+```{r, echo = FALSE}
+setwd("~/Projects/datasciencecoursera/Practical_machine_learning/project/")
+```
+
+loading required libraries
+
+```{r,message=FALSE, warning=FALSE}
+library(caret)
+library(rpart)
+```
+###Loading the training and test set:
+```{r}
+data <- read.csv("pml-training.csv")
+dim(data)
+test <- read.csv("pml-testing.csv")
+dim(test)
+```
+
+###Data Preparation
+
+Drop the first 7 columns as they're unnecessary for predicting.
+
+```{r}
+newTrain <- data[,8:length(colnames(data))]
+newTest <- test[,8:length(colnames(test))]
+```
+
+
+There seem to be some variables with large number of NAs. Setting a criteria of %80 for the allowed number of NAs, the columns which do not meet the criteria are removed. 
+
+```{r}
+c <- nrow(newTrain) * 0.8
+checkNA <- is.na(newTrain)
+checkNA1 <- matrix(0, 1, ncol(checkNA))
+for (i in 1:ncol(checkNA) )
+  checkNA1[i] <- sum(checkNA[,i])
+newTrain <- newTrain[, checkNA1 < c]
+
+c <- nrow(newTest) * 0.8
+checkNA <- is.na(newTest)
+checkNA1 <- matrix(0, 1, ncol(checkNA))
+for (i in 1:ncol(checkNA) )
+  checkNA1[i] <- sum(checkNA[,i])
+newTest <- newTest[, checkNA1 < c]
+
+
+rm(checkNA, checkNA1)
+dim(newTrain)
+dim(newTest)
+```
+
+Checking the variables for near zero variance and removing them from the training set
+
+```{r}
+NZV <- nearZeroVar(newTrain)
+newTrain <- newTrain[,-NZV]
+dim(newTrain)
+```
+
+Partitioning the training set into training (%60) and testing (%40) subsets in order to cross validate the model.
+
+```{r}
+set.seed(2000)
+inTrain <- createDataPartition(y = newTrain$classe, p=0.6, list = FALSE)
+training <- newTrain[inTrain,]
+testing <- newTrain[-inTrain,]
+```
+
+###Random forest algorithm
+
+```{r}
+train_control <- trainControl(method='cv', number=3)
+modelFit <- train(classe ~., method="rf", data=training, trControl=train_control)
+```
+
+Prediction on the cross validation (testing) subset
+
+```{r}
+tclass <- testing[,53]
+testing <- testing[,-53]
+pred_cross_test <- predict(modelFit, testing)
+confMat <- confusionMatrix(pred_cross_test, tclass)
+confMat
+```
+
+Out of sample error rate can be calculated as
+```{r}
+OSER <- 1-confMat[["overall"]][["Accuracy"]]
+OSER
+```
+
+Now we apply the model to predict the actual test data and save the outcome
+
+```{r}
+pred_test <- predict(modelFit, newTest)
+pred_test
+n = length(pred_test)
+for(i in 1:n){
+  filename = paste0("problem_id_",i,".txt")
+  write.table(pred_test[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+}
+```
